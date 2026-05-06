@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+
+    function isValidLead(data) {
+      return data.businessName is string && data.businessName.size() > 0 && data.businessName.size() <= 128
+             && data.phoneNumber is string && data.phoneNumber.size() > 0 && data.phoneNumber.size() <= 20
+             && data.cityCountry is string && data.cityCountry.size() > 0 && data.cityCountry.size() <= 128
+             && data.hasWebsite is bool
+             && (data.hasWebsite == false || (data.websiteUrl is string && data.websiteUrl.size() > 0 && data.websiteUrl.size() <= 256))
+             && data.status in ['new', 'contacted', 'engaged', 'qualified', 'closed-won', 'closed-lost']
+             && data.conversationHistory is list && data.conversationHistory.size() <= 100;
+    }
+
+    match /leads/{leadId} {
+      allow create: if isSignedIn() && isValidId(leadId) && isValidLead(incoming());
+      allow read: if isSignedIn();
+      allow update: if isSignedIn() && isValidLead(incoming());
+      allow delete: if false;
+    }
+  }
+}

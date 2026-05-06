@@ -1,0 +1,28 @@
+{
+  "entities": {
+    "Lead": {
+      "title": "Lead",
+      "description": "A business lead identified from Google Maps",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string" },
+        "category": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "hasWebsite": { "type": "boolean" },
+        "cityCountry": { "type": "string" },
+        "conversationHistory": { "type": "array" },
+        "status": { 
+          "type": "string",
+          "enum": ["new", "contacted", "engaged", "qualified", "closed-won", "closed-lost"]
+        }
+      },
+      "required": ["businessName", "phoneNumber", "hasWebsite", "status"]
+    }
+  },
+  "firestore": {
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Storage for potential business leads"
+    }
+  }
+}
