@@ -21,7 +21,8 @@ import {
   ChevronDown,
   ExternalLink,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateContent } from './services/geminiService';
@@ -266,6 +267,11 @@ export default function App() {
                     layout
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ 
+                      y: -4, 
+                      scale: 1.005,
+                      boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)"
+                    }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ delay: index * 0.05 }}
                     className="glass-card group hover:ring-1 hover:ring-indigo-500/20 transition-all rounded-xl p-5 overflow-hidden"
@@ -326,16 +332,20 @@ export default function App() {
                           {lead.conversationHistory?.length === 0 && (
                             <p className="text-slate-400 text-xs italic">No activity yet. Start with AI assistance below.</p>
                           )}
-                          {lead.conversationHistory?.map((chat: any, i: number) => (
-                            <motion.div 
-                              initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
-                              key={i} 
-                              className="flex gap-2 text-xs"
-                            >
-                              <span className="text-slate-400 shrink-0 select-none">•</span>
-                              <p className="text-slate-600 leading-relaxed font-mono tracking-tighter opacity-80">{chat.message}</p>
-                            </motion.div>
-                          ))}
+                          <AnimatePresence initial={false}>
+                            {lead.conversationHistory?.map((chat: any, i: number) => (
+                              <motion.div 
+                                initial={{ opacity: 0, y: 4 }} 
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, ease: "easeOut" }}
+                                key={i} 
+                                className="flex gap-2 text-xs"
+                              >
+                                <span className="text-slate-400 shrink-0 select-none">•</span>
+                                <p className="text-slate-600 leading-relaxed font-mono tracking-tighter opacity-80">{chat.message}</p>
+                              </motion.div>
+                            ))}
+                          </AnimatePresence>
                         </div>
                         
                         <div className="flex flex-col gap-3">
@@ -352,8 +362,20 @@ export default function App() {
                                 }
                               }}
                             />
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                              {/* Inline simple send button if needed */}
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                              <button 
+                                onClick={() => {
+                                  const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
+                                  if (el && el.value.trim()) {
+                                    handleAddMessage(lead.id, el.value);
+                                    el.value = '';
+                                  }
+                                }}
+                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Send Message"
+                              >
+                                <Send className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
                           
