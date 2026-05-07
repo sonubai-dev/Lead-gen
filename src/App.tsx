@@ -22,13 +22,24 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertCircle,
-  Send
+  Send,
+  LayoutGrid,
+  List,
+  Zap,
+  Layers,
+  Users,
+  Rocket,
+  Target,
+  CreditCard,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { generateContent } from './services/geminiService';
+import { generateContent, SalesScenario } from './services/geminiService';
 import { db, auth } from './lib/firebase';
 
 const provider = new GoogleAuthProvider();
+
+const PIPELINE_STAGES = ['new', 'contacted', 'engaged', 'qualified', 'closed-won', 'closed-lost'];
 
 enum OperationType {
   CREATE = 'create',
@@ -75,6 +86,38 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [sortBy, setSortBy] = useState<'businessName' | 'cityCountry' | 'status'>('businessName');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'pipeline'>('list');
+  const [selectedScenarios, setSelectedScenarios] = useState<Record<string, SalesScenario>>({});
+  const [isGenerating, setIsGenerating] = useState<Record<string, boolean>>({});
+
+  const handleGenerate = async (lead: any, type: 'whatsapp' | 'email') => {
+    const scenario = selectedScenarios[lead.id] || 'initial_outreach';
+    setIsGenerating(prev => ({ ...prev, [lead.id]: true }));
+    try {
+      const msg = await generateContent(lead, type, scenario);
+      const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
+      if (el) el.value = msg;
+    } catch (error) {
+      console.error("AI generation error:", error);
+    } finally {
+      setIsGenerating(prev => ({ ...prev, [lead.id]: false }));
+    }
+  };
+
+  const handleOpenExternal = (lead: any, type: 'whatsapp' | 'email') => {
+    const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
+    const msg = el?.value || "";
+    if (type === 'whatsapp') {
+      const cleanPhone = lead.phoneNumber.replace(/\D/g, '');
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    } else {
+      window.open(`mailto:${lead.email}?body=${encodeURIComponent(msg)}`, '_blank');
+    }
+    // Automatically add to history when opening externally
+    if (msg) {
+      handleAddMessage(lead.id, `[Sent via ${type.toUpperCase()}] ${msg}`);
+    }
+  };
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => setUser(user));
@@ -124,6 +167,17 @@ export default function App() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    
+    // Simple Validation
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError('Invalid email address');
+      return;
+    }
+    if (hasWebsite && websiteUrl && !websiteUrl.startsWith('http')) {
+      alert('Website URL must start with http:// or https://');
+      return;
+    }
+
     setStatus('submitting');
     try {
       await addDoc(collection(db, 'leads'), {
@@ -164,193 +218,310 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 font-sans selection:bg-indigo-100 italic-none overflow-x-hidden">
+      <div className="min-h-screen bg-[#020617] text-slate-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
         {/* Nav */}
-        <nav className="fixed top-0 w-full z-50 bg-white/70 backdrop-blur-md border-b border-slate-200/50">
+        <nav className="fixed top-0 w-full z-50 bg-[#020617]/80 backdrop-blur-xl border-b border-white/5">
           <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2"
-            >
-              <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shadow-lg shadow-slate-200">
-                <Sparkles className="text-white w-4 h-4" />
+            <div className="flex items-center gap-2 group cursor-pointer">
+              <div className="w-9 h-9 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+                <Sparkles className="text-white w-5 h-5" />
               </div>
-              <span className="font-bold text-slate-900 tracking-tight text-xl">LeadGen AI</span>
-            </motion.div>
-            <motion.button 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              onClick={handleLogin} 
-              className="text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Sign In
-            </motion.button>
+              <span className="font-bold text-white tracking-tight text-xl">LeadGen<span className="text-indigo-400">.ai</span></span>
+            </div>
+            
+            <div className="hidden md:flex items-center gap-8">
+              {['Features', 'How it Works', 'Pricing', 'Testimonials'].map((link) => (
+                <a key={link} href={`#${link.toLowerCase().replace(/\s+/g, '-')}`} className="text-sm font-medium text-slate-400 hover:text-white transition-colors">
+                  {link}
+                </a>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-4">
+              <button onClick={handleLogin} className="text-sm font-semibold text-slate-400 hover:text-white transition-colors">
+                Log In
+              </button>
+              <button onClick={handleLogin} className="hidden sm:block px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-all shadow-lg shadow-indigo-500/20">
+                Sign Up
+              </button>
+            </div>
           </div>
         </nav>
 
         {/* Hero Section */}
-        <section className="pt-32 pb-20 px-6 relative">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-gradient-to-b from-indigo-50/50 to-transparent -z-10 pointer-events-none" />
-          <div className="max-w-4xl mx-auto text-center">
+        <section className="pt-40 pb-24 px-6 relative">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-5xl h-[600px] bg-indigo-600/10 blur-[120px] -z-10 rounded-full opacity-50" />
+          <div className="max-w-5xl mx-auto text-center">
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
+              initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
             >
-              <motion.span 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold uppercase tracking-wider mb-6 shadow-sm"
-              >
-                <Sparkles className="w-3 h-3" />
-                Trusted by 500+ Sales Teams
-              </motion.span>
-              <h1 className="text-5xl md:text-7xl font-extrabold text-slate-900 tracking-tight mb-6 leading-[1.1]">
-                Turn your leads into <br />
-                <motion.span 
-                  initial={{ backgroundPosition: "0% 50%" }}
-                  animate={{ backgroundPosition: "100% 50%" }}
-                  transition={{ duration: 5, repeat: Infinity, repeatType: "reverse" }}
-                  className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-[length:200%_auto]"
-                >
-                  loyal customers.
-                </motion.span>
-              </h1>
-              <motion.p 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4, duration: 1 }}
-                className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto leading-relaxed"
-              >
-                The AI-powered CRM that helps business owners capture, manage, and close leads with automated smart messaging.
-              </motion.p>
               <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="flex flex-col sm:flex-row items-center justify-center gap-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-8"
               >
+                <Zap className="w-3 h-3 fill-indigo-400" />
+                The Future of Autonomous Outbound
+              </motion.div>
+              
+              <h1 className="text-5xl md:text-8xl font-black text-white tracking-tight mb-8 leading-[0.95]">
+                Scrape. Automate. <br />
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-violet-400 to-indigo-400 bg-[length:200%_auto] animate-gradient">Close at Scale.</span>
+              </h1>
+              
+              <p className="text-lg md:text-xl text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
+                The only platform that combines <span className="text-white">Precision Google Maps Scraping</span> with <span className="text-white">AI-Powered WhatsApp Automation</span> to turn strangers into loyal clients—autonomously.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
                 <motion.button 
-                  whileHover={{ scale: 1.05, boxShadow: "0 25px 50px -12px rgba(79, 70, 229, 0.25)" }}
+                  whileHover={{ scale: 1.05, boxShadow: "0 25px 50px -12px rgba(79, 70, 229, 0.4)" }}
                   whileTap={{ scale: 0.95 }}
                   onClick={handleLogin} 
-                  className="btn-primary px-8 py-4 text-lg flex items-center justify-center gap-3 w-full sm:w-auto shadow-2xl shadow-indigo-100 group"
+                  className="px-8 py-5 bg-indigo-600 text-white text-lg font-bold rounded-2xl flex items-center gap-3 w-full sm:w-auto shadow-2xl shadow-indigo-500/20 group"
                 >
-                  Get Started for Free
-                  <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                  Launch Your First Campaign
+                  <ArrowUpDown className="w-5 h-5 group-hover:translate-x-1 transition-transform rotate-90" />
                 </motion.button>
-                <div className="flex items-center gap-2 px-4 py-2 text-slate-400 text-sm">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  No credit card required
+                <div className="flex -space-x-3 items-center">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="w-10 h-10 rounded-full border-2 border-[#020617] bg-slate-800 flex items-center justify-center text-xs font-bold ring-2 ring-indigo-500/20">
+                      U{i}
+                    </div>
+                  ))}
+                  <div className="flex flex-col items-start ml-6 text-left">
+                    <div className="flex text-amber-400">
+                      {[1,2,3,4,5].map(i => <Sparkles key={i} className="w-3 h-3 fill-current" />)}
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trusted by 2,400+ Founders</span>
+                  </div>
                 </div>
-              </motion.div>
+              </div>
             </motion.div>
           </div>
         </section>
 
-        {/* Features Section */}
-        <section className="py-24 bg-white border-y border-slate-200/60 relative overflow-hidden">
-          <div className="max-w-7xl mx-auto px-6 relative z-10">
-            <div className="text-center mb-20">
-              <motion.h2 
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className="text-4xl font-bold text-slate-900 tracking-tight mb-4"
-              >
-                Everything you need to grow
-              </motion.h2>
-              <motion.p 
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                className="text-slate-500 text-lg"
-              >
-                Built for speed, automation, and high-conversion sales teams.
-              </motion.p>
+        {/* How It Works - Visual Storyboard */}
+        <section id="how-it-works" className="py-24 px-6 bg-slate-950/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col md:flex-row items-end justify-between gap-8 mb-20">
+              <div className="max-w-2xl">
+                <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Built for lean teams with <span className="text-indigo-400 underline decoration-indigo-500/30 underline-offset-8">massive ambitions.</span></h2>
+              </div>
+              <p className="text-slate-400 text-lg md:max-w-sm">From pinpointing a local business to a signed contract in three effortless steps.</p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
               {[
-                {
-                  title: 'AI Smart Messages',
-                  desc: 'Generate tailored WhatsApp and Email responses using Gemini 1.5 Flash in seconds.',
-                  icon: <Sparkles className="w-6 h-6 text-indigo-600" />,
-                  color: 'bg-indigo-50',
-                  border: 'hover:border-indigo-200'
+                { 
+                  step: "01", 
+                  title: "Google Maps Discovery", 
+                  desc: "Our hyper-threaded scraper extracts real-time business data, phone numbers, and social signals directly from Google Maps.",
+                  icon: <MapPin className="w-8 h-8 text-indigo-500" />
                 },
-                {
-                  title: 'Lead Pipeline',
-                  desc: 'Organize your sales funnel with custom statuses from new to cold to closed-won.',
-                  icon: <Filter className="w-6 h-6 text-blue-600" />,
-                  color: 'bg-blue-50',
-                  border: 'hover:border-blue-200'
+                { 
+                  step: "02", 
+                  title: "AI Intent Analysis", 
+                  desc: "Gemini 1.5 Flash analyzes business websites to find pain points and crafts the perfect conversational hook.",
+                  icon: <Sparkles className="w-8 h-8 text-violet-500" />
                 },
-                {
-                  title: 'Website Insights',
-                  desc: 'Automatically pull context from lead websites to personalize your outreach.',
-                  icon: <Globe className="w-6 h-6 text-emerald-600" />,
-                  color: 'bg-emerald-50',
-                  border: 'hover:border-emerald-200'
+                { 
+                  step: "03", 
+                  title: "Autonomous Outreach", 
+                  desc: "Deploy WhatsApp agents that handle the first wave of questions and booking requests 24/7.",
+                  icon: <Send className="w-8 h-8 text-emerald-500" />
                 }
-              ].map((feature, i) => (
-                <motion.div 
-                  key={i}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.15 }}
-                  whileHover={{ y: -10 }}
-                  className={`glass-card p-10 rounded-[32px] border border-slate-100 transition-all duration-300 ${feature.border}`}
-                >
-                  <div className={`w-14 h-14 ${feature.color} rounded-2xl flex items-center justify-center mb-8 shadow-sm`}>
-                    {feature.icon}
+              ].map((item, i) => (
+                <div key={i} className="relative group">
+                  <div className="text-[120px] font-black text-white/5 absolute -top-20 -left-6 select-none group-hover:text-indigo-500/10 transition-colors">{item.step}</div>
+                  <div className="relative z-10">
+                    <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-8 border border-white/5 group-hover:border-indigo-500/50 transition-all group-hover:scale-110">
+                      {item.icon}
+                    </div>
+                    <h3 className="text-2xl font-bold text-white mb-4">{item.title}</h3>
+                    <p className="text-slate-500 leading-relaxed text-lg">{item.desc}</p>
                   </div>
-                  <h3 className="text-2xl font-bold text-slate-900 mb-4">{feature.title}</h3>
-                  <p className="text-slate-500 leading-relaxed text-lg">{feature.desc}</p>
-                </motion.div>
+                </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* CTA Section */}
-        <section className="py-28 px-6">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="max-w-5xl mx-auto glass-card rounded-[40px] p-16 bg-slate-900 text-white shadow-3xl flex flex-col md:flex-row items-center justify-between gap-12 relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2" />
-            <div className="relative z-10 text-center md:text-left">
-              <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">Start your growth <br />journey today.</h2>
-              <p className="text-slate-400 text-lg mb-8">Join the waitlist or sign in to explore the dashboard.</p>
+        {/* Features Bento Grid */}
+        <section id="features" className="py-24 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-20">
+              <h2 className="text-4xl font-bold text-white mb-4">Enterprise Power. Startup Speed.</h2>
+              <p className="text-slate-500">Everything you need to dominate your local market.</p>
             </div>
-            <motion.button 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleLogin} 
-              className="relative z-10 px-10 py-5 bg-white text-slate-900 font-bold rounded-2xl hover:bg-slate-50 transition-all shadow-2xl shrink-0 text-xl"
-            >
-              Launch Dashboard
-            </motion.button>
-          </motion.div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+              <div className="col-span-1 md:col-span-8 bg-slate-900/40 rounded-[32px] p-10 border border-white/5 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row gap-10">
+                <div className="flex-1">
+                  <div className="w-12 h-12 bg-indigo-600/10 rounded-xl flex items-center justify-center mb-6">
+                    <Globe className="text-indigo-500 w-6 h-6" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-4 text-nowrap">Global Maps Intelligence</h3>
+                  <p className="text-slate-500 leading-relaxed">Scape any city, any niche, any language. Get verified phone numbers, website context, and revenue signals at lightning speed.</p>
+                </div>
+                <div className="flex-1 bg-slate-950 rounded-2xl border border-white/5 p-6 flex flex-col justify-center">
+                  <div className="space-y-3">
+                    <div className="h-2 w-full bg-indigo-500/10 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} whileInView={{ width: "85%" }} className="h-full bg-indigo-500" />
+                    </div>
+                    <div className="h-2 w-full bg-violet-500/10 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} whileInView={{ width: "65%" }} className="h-full bg-violet-500" />
+                    </div>
+                    <div className="h-2 w-full bg-emerald-500/10 rounded-full overflow-hidden">
+                      <motion.div initial={{ width: 0 }} whileInView={{ width: "95%" }} className="h-full bg-emerald-500" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-span-1 md:col-span-4 bg-slate-900/40 rounded-[32px] p-10 border border-white/5 hover:border-violet-500/30 transition-all">
+                <div className="w-12 h-12 bg-violet-600/10 rounded-xl flex items-center justify-center mb-6">
+                  <Layers className="text-violet-500 w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-4">Smart CRM</h3>
+                <p className="text-slate-500 leading-relaxed">Visualize your pipeline with a drag-and-drop board designed for high-velocity sales.</p>
+              </div>
+
+              <div className="col-span-1 md:col-span-4 bg-slate-900/40 rounded-[32px] p-10 border border-white/5 hover:border-amber-500/30 transition-all">
+                <div className="w-12 h-12 bg-amber-600/10 rounded-xl flex items-center justify-center mb-6">
+                  <Users className="text-amber-500 w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-4">Team Collaboration</h3>
+                <p className="text-slate-500 leading-relaxed">Unified inbox for your whole sales force to jump in and close the deal.</p>
+              </div>
+
+              <div className="col-span-1 md:col-span-8 bg-slate-900/40 rounded-[32px] p-10 border border-white/5 hover:border-emerald-500/30 transition-all flex flex-col md:flex-row gap-10">
+                <div className="flex-1">
+                  <div className="w-12 h-12 bg-emerald-600/10 rounded-xl flex items-center justify-center mb-6">
+                    <MessageSquare className="text-emerald-500 w-6 h-6" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-4">WhatsApp AI Agent</h3>
+                  <p className="text-slate-500 leading-relaxed">Deploy 24/7 AI agents that speak naturally, answer objections, and guide leads to the next step of your funnel.</p>
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div className="bg-slate-950 p-3 rounded-xl border border-white/5 text-[10px] ml-4 text-emerald-400">Hey, saw your plumbing service. Can you handle a burst pipe today?</div>
+                  <div className="bg-indigo-600 p-3 rounded-xl text-[10px] mr-4 text-white">Absolutely! We have an engineer in SF right now. Would you like a quick quote?</div>
+                  <div className="bg-slate-950 p-3 rounded-xl border border-white/5 text-[10px] ml-4 text-emerald-400">Yes please!</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <footer className="py-12 border-t border-slate-200/50">
-          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2 text-slate-400">
-              <Sparkles className="w-4 h-4" />
-              <span className="font-bold tracking-tight">LeadGen AI</span>
+        {/* Pricing */}
+        <section id="pricing" className="py-24 px-6 bg-slate-950/30">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-20 text-white">
+              <h2 className="text-4xl font-bold mb-4">Simple, Scalable Pricing</h2>
+              <p className="text-slate-500">Pick a plan that fits your growth ambitions.</p>
             </div>
-            <p className="text-slate-400 text-sm italic-none">&copy; 2026 LeadGen AI. All rights reserved.</p>
-            <div className="flex items-center gap-6 text-sm font-medium text-slate-400">
-              <a href="#" className="hover:text-slate-600 transition-colors">Privacy</a>
-              <a href="#" className="hover:text-slate-600 transition-colors">Terms</a>
-              <a href="#" className="hover:text-slate-600 transition-colors">Help</a>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {[
+                { 
+                  name: "Pro Starter", 
+                  price: "$49", 
+                  desc: "Ideal for solo-entrepreneurs",
+                  features: ["500 Leads / month", "Google Maps Scraper", "AI Messaging Suggestions", "Standard Support"],
+                  color: "border-white/5"
+                },
+                { 
+                  name: "Growth Engine", 
+                  price: "$99", 
+                  desc: "Perfect for scaling agencies",
+                  features: ["2,500 Leads / month", "Unlimited Scraping", "WhatsApp AI Agent Pro", "CRM Pipeline Access", "Priority Support"],
+                  color: "border-indigo-500/50 shadow-2xl shadow-indigo-500/10",
+                  popular: true
+                },
+                { 
+                  name: "Enterprise", 
+                  price: "Custom", 
+                  desc: "For the big players",
+                  features: ["Unlimited Everything", "Custom AI Models", "API Access", "Dedicated Success Manager", "White-label Options"],
+                  color: "border-white/5"
+                }
+              ].map((plan, i) => (
+                <div key={i} className={`relative p-10 rounded-[32px] bg-slate-900/60 border ${plan.color} flex flex-col`}>
+                  {plan.popular && <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Most Popular</span>}
+                  <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+                  <div className="flex items-baseline gap-1 mb-6">
+                    <span className="text-4xl font-black text-white">{plan.price}</span>
+                    {plan.price !== "Custom" && <span className="text-slate-500 text-sm">/mo</span>}
+                  </div>
+                  <p className="text-slate-500 text-sm mb-8">{plan.desc}</p>
+                  <ul className="space-y-4 mb-10 flex-grow">
+                    {plan.features.map(f => (
+                      <li key={f} className="flex items-center gap-3 text-sm text-slate-400">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button onClick={handleLogin} className={`w-full py-4 rounded-xl font-bold transition-all ${plan.popular ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+                    Get Started
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="py-20 px-6 border-t border-white/5">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-20">
+              <div className="col-span-1 md:col-span-1">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                    <Sparkles className="text-white w-4 h-4" />
+                  </div>
+                  <span className="font-bold text-white tracking-tight text-xl">LeadGen<span className="text-indigo-400">.ai</span></span>
+                </div>
+                <p className="text-slate-500 text-sm leading-relaxed">The next generation lead management system powered by AI and real-time data.</p>
+              </div>
+              <div>
+                <h4 className="text-white font-bold mb-6">Product</h4>
+                <ul className="space-y-4 text-sm text-slate-500">
+                  <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">Scraper</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">AI Agents</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">Pricing</a></li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-white font-bold mb-6">Company</h4>
+                <ul className="space-y-4 text-sm text-slate-500">
+                  <li><a href="#" className="hover:text-white transition-colors">About</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">Legal</a></li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="text-white font-bold mb-6">Social</h4>
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 bg-white/5 rounded-lg border border-white/5 flex items-center justify-center hover:bg-white/10 transition-all cursor-pointer">
+                    <Globe className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <div className="w-10 h-10 bg-white/5 rounded-lg border border-white/5 flex items-center justify-center hover:bg-white/10 transition-all cursor-pointer">
+                    <Users className="w-5 h-5 text-slate-400" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+              <p className="text-slate-600 text-xs italic-none">&copy; 2026 LeadGen AI. Crafted for world-class sales teams.</p>
+              <div className="flex gap-8 text-xs font-bold text-slate-600 uppercase tracking-widest">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+              </div>
             </div>
           </div>
         </footer>
@@ -388,7 +559,23 @@ export default function App() {
           {/* Main Content Area */}
           <div className="lg:col-span-8 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Active Leads</h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Active Leads</h2>
+                <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                  <button 
+                    onClick={() => setViewMode('list')}
+                    className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('pipeline')}
+                    className={`p-1.5 rounded-md transition-all ${viewMode === 'pipeline' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
               <button 
                 onClick={() => setIsFormOpen(!isFormOpen)}
                 className="btn-primary flex items-center gap-2"
@@ -398,214 +585,246 @@ export default function App() {
               </button>
             </div>
 
-            {/* Filter Bar */}
-            <div className="glass-card rounded-xl p-4 flex flex-wrap gap-3">
-              <div className="relative flex-grow min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder="Search by name or city..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="input-base pl-10"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-slate-400" />
-                <select 
-                  value={filterStatus} 
-                  onChange={(e) => setFilterStatus(e.target.value)} 
-                  className="input-base py-2 w-auto appearance-none pr-8 cursor-pointer"
-                >
-                  <option value="all">Statuses</option>
-                  {['new', 'contacted', 'engaged', 'qualified', 'closed-won', 'closed-lost'].map(s => (
-                    <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <ArrowUpDown className="w-4 h-4 text-slate-400" />
-                <select 
-                  value={sortBy} 
-                  onChange={(e) => setSortBy(e.target.value as any)} 
-                  className="input-base py-2 w-auto appearance-none pr-8 cursor-pointer"
-                >
-                  <option value="businessName">Sort by Name</option>
-                  <option value="cityCountry">Sort by City</option>
-                  <option value="status">Sort by Status</option>
-                </select>
-              </div>
-            </div>
+            {viewMode === 'list' ? (
+              <>
+                {/* Filter Bar */}
+                <div className="glass-card rounded-xl p-4 flex flex-wrap gap-3">
+                  <div className="relative flex-grow min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input 
+                      type="text" 
+                      placeholder="Search by name or city..." 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="input-base pl-10"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-slate-400" />
+                    <select 
+                      value={filterStatus} 
+                      onChange={(e) => setFilterStatus(e.target.value)} 
+                      className="input-base py-2 w-auto appearance-none pr-8 cursor-pointer"
+                    >
+                      <option value="all">Statuses</option>
+                      {PIPELINE_STAGES.map(s => (
+                        <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ArrowUpDown className="w-4 h-4 text-slate-400" />
+                    <select 
+                      value={sortBy} 
+                      onChange={(e) => setSortBy(e.target.value as any)} 
+                      className="input-base py-2 w-auto appearance-none pr-8 cursor-pointer"
+                    >
+                      <option value="businessName">Sort by Name</option>
+                      <option value="cityCountry">Sort by City</option>
+                      <option value="status">Sort by Status</option>
+                    </select>
+                  </div>
+                </div>
 
-            {/* List */}
-            <div className="space-y-4">
-              <AnimatePresence mode="popLayout">
-                {filteredAndSortedLeads.map((lead, index) => (
-                  <motion.div
-                    key={lead.id}
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    whileHover={{ 
-                      y: -4, 
-                      scale: 1.005,
-                      boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)"
-                    }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="glass-card group hover:ring-1 hover:ring-indigo-500/20 transition-all rounded-xl p-5 overflow-hidden"
-                  >
-                    <div className="flex flex-col sm:flex-row justify-between gap-4">
-                      <div className="flex-grow">
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="font-bold text-lg text-slate-900 tracking-tight">{lead.businessName}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusColors[lead.status]}`}>
-                            {lead.status}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
-                          <div className="flex items-center gap-1.5">
-                            <Phone className="w-3.5 h-3.5 text-slate-400" />
-                            {lead.phoneNumber}
-                          </div>
-                          {lead.email && (
-                            <div className="flex items-center gap-1.5">
-                              <Mail className="w-3.5 h-3.5 text-slate-400" />
-                              {lead.email}
+                {/* List View Rendering */}
+                <div className="space-y-4">
+                  <AnimatePresence mode="popLayout">
+                    {filteredAndSortedLeads.map((lead, index) => (
+                      <motion.div
+                        key={lead.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        whileHover={{ 
+                          y: -4, 
+                          scale: 1.005,
+                          boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05)"
+                        }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="glass-card group hover:ring-1 hover:ring-indigo-500/20 transition-all rounded-xl p-5 overflow-hidden"
+                      >
+                        <div className="flex flex-col sm:flex-row justify-between gap-4">
+                          <div className="flex-grow">
+                            <div className="flex items-center gap-3 mb-1">
+                              <h3 className="font-bold text-lg text-slate-900 tracking-tight">{lead.businessName}</h3>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusColors[lead.status]}`}>
+                                {lead.status}
+                              </span>
                             </div>
-                          )}
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            {lead.cityCountry}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
+                              <div className="flex items-center gap-1.5">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" />
+                                {lead.phoneNumber}
+                              </div>
+                              {lead.email && (
+                                <div className="flex items-center gap-1.5">
+                                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                                  {lead.email}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                                {lead.cityCountry}
+                              </div>
+                              {lead.hasWebsite && lead.websiteUrl && (
+                                <a 
+                                  href={lead.websiteUrl} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="flex items-center gap-1 text-indigo-600 hover:text-indigo-700 hover:underline"
+                                >
+                                  <Globe className="w-3.5 h-3.5" />
+                                  <span className="truncate max-w-[150px]">{lead.websiteUrl.replace(/https?:\/\//, '')}</span>
+                                  <ExternalLink className="w-3" />
+                                </a>
+                              )}
+                            </div>
                           </div>
-                          {lead.hasWebsite && lead.websiteUrl && (
-                            <a 
-                              href={lead.websiteUrl} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="flex items-center gap-1 text-indigo-600 hover:text-indigo-700 hover:underline"
+
+                          <div className="flex sm:flex-col justify-end items-end gap-3 min-w-[120px]">
+                            <select 
+                              value={lead.status} 
+                              onChange={(e) => handleUpdateStatus(lead.id, e.target.value)}
+                              className="input-base py-1 px-2 text-xs w-auto appearance-none cursor-pointer bg-slate-50"
                             >
-                              <Globe className="w-3.5 h-3.5" />
-                              <span className="truncate max-w-[150px]">{lead.websiteUrl.replace(/https?:\/\//, '')}</span>
-                              <ExternalLink className="w-3" />
-                            </a>
-                          )}
+                              {PIPELINE_STAGES.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex sm:flex-col justify-end items-end gap-3 min-w-[120px]">
-                        <select 
-                          value={lead.status} 
-                          onChange={(e) => handleUpdateStatus(lead.id, e.target.value)}
-                          className="input-base py-1 px-2 text-xs w-auto appearance-none cursor-pointer bg-slate-50"
-                        >
-                          {['new', 'contacted', 'engaged', 'qualified', 'closed-won', 'closed-lost'].map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 border-t border-slate-100 pt-5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <MessageSquare className="w-4 h-4 text-slate-400" />
-                        <h4 className="font-semibold text-sm text-slate-700">Automation Hub</h4>
-                      </div>
-                      
-                      <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-100">
-                        <div className="space-y-2 mb-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                          {lead.conversationHistory?.length === 0 && (
-                            <p className="text-slate-400 text-xs italic">No activity yet. Start with AI assistance below.</p>
-                          )}
-                          <AnimatePresence initial={false}>
-                            {lead.conversationHistory?.map((chat: any, i: number) => (
-                              <motion.div 
-                                initial={{ opacity: 0, y: 4 }} 
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3, ease: "easeOut" }}
-                                key={i} 
-                                className="flex gap-2 text-xs"
-                              >
-                                <span className="text-slate-400 shrink-0 select-none">•</span>
-                                <p className="text-slate-600 leading-relaxed font-mono tracking-tighter opacity-80">{chat.message}</p>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                        
-                        <div className="flex flex-col gap-3">
-                          <div className="relative">
-                            <input 
-                              id={`message-input-${lead.id}`}
-                              type="text" 
-                              placeholder="Type a message or use AI suggestions..."
-                              className="input-base py-2.5 pr-12 text-sm bg-white"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleAddMessage(lead.id, e.currentTarget.value);
-                                  e.currentTarget.value = '';
-                                }
-                              }}
-                            />
-                            <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                              <button 
-                                onClick={() => {
-                                  const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
-                                  if (el && el.value.trim()) {
-                                    handleAddMessage(lead.id, el.value);
-                                    el.value = '';
-                                  }
-                                }}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Send Message"
-                              >
-                                <Send className="w-4 h-4" />
-                              </button>
-                            </div>
+                        <div className="mt-6 border-t border-slate-100 pt-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <MessageSquare className="w-4 h-4 text-slate-400" />
+                            <h4 className="font-semibold text-sm text-slate-700">Automation Hub</h4>
                           </div>
                           
-                          <div className="flex flex-wrap gap-2">
-                            <button 
-                              onClick={async () => {
-                                const msg = await generateContent(lead, 'whatsapp');
-                                const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
-                                if (el) el.value = msg;
-                              }}
-                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-indigo-100"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              WhatsApp Suggestion
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                const msg = await generateContent(lead, 'email');
-                                const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
-                                if (el) el.value = msg;
-                              }}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-blue-100"
-                            >
-                              <Mail className="w-3 h-3" />
-                              Professional Email
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                const msg = await generateContent(lead, 'email');
-                                const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
-                                if (el) el.value = msg;
-                              }}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors"
-                            >
-                              <ArrowUpDown className="w-3 h-3" />
-                              Draft Suggestion
-                            </button>
+                          <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-100">
+                            <div className="space-y-2 mb-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                              {lead.conversationHistory?.length === 0 && (
+                                <p className="text-slate-400 text-xs italic">No activity yet. Start with AI assistance below.</p>
+                              )}
+                              <AnimatePresence initial={false}>
+                                {lead.conversationHistory?.map((chat: any, i: number) => (
+                                  <motion.div 
+                                    initial={{ opacity: 0, y: 4 }} 
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3, ease: "easeOut" }}
+                                    key={i} 
+                                    className="flex gap-2 text-xs"
+                                  >
+                                    <span className="text-slate-400 shrink-0 select-none">•</span>
+                                    <p className="text-slate-600 leading-relaxed font-mono tracking-tighter opacity-80">{chat.message}</p>
+                                  </motion.div>
+                                ))}
+                              </AnimatePresence>
+                            </div>
+                            
+                            <div className="flex flex-col gap-3">
+                              <div className="relative">
+                                <input 
+                                  id={`message-input-${lead.id}`}
+                                  type="text" 
+                                  placeholder="Type a message or use AI suggestions..."
+                                  className="input-base py-2.5 pr-12 text-sm bg-white"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleAddMessage(lead.id, e.currentTarget.value);
+                                      e.currentTarget.value = '';
+                                    }
+                                  }}
+                                />
+                                <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                                  <button 
+                                    onClick={() => {
+                                      const el = document.getElementById(`message-input-${lead.id}`) as HTMLInputElement;
+                                      if (el && el.value.trim()) {
+                                        handleAddMessage(lead.id, el.value);
+                                        el.value = '';
+                                      }
+                                    }}
+                                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    title="Send Message"
+                                  >
+                                    <Send className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              <div className="flex flex-wrap items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Scenario:</label>
+                                  <select 
+                                    value={selectedScenarios[lead.id] || 'initial_outreach'}
+                                    onChange={(e) => setSelectedScenarios(prev => ({ ...prev, [lead.id]: e.target.value as SalesScenario }))}
+                                    className="input-base py-1 px-2 text-[10px] w-auto appearance-none cursor-pointer bg-white border-slate-200"
+                                  >
+                                    <option value="initial_outreach">Initial Outreach</option>
+                                    <option value="follow_up">Follow Up</option>
+                                    <option value="objection_handling">Objection Handling</option>
+                                    <option value="special_offer">Special Offer</option>
+                                  </select>
+                                </div>
+                                
+                              <div className="flex flex-wrap gap-2">
+                                  <div className="flex gap-1 group/btn">
+                                    <button 
+                                      onClick={() => handleGenerate(lead, 'whatsapp')}
+                                      disabled={!!isGenerating[lead.id]}
+                                      className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-l-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-indigo-100 disabled:opacity-50"
+                                    >
+                                      {isGenerating[lead.id] ? (
+                                        <div className="w-3 h-3 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                                      ) : (
+                                        <Sparkles className="w-3 h-3" />
+                                      )}
+                                      Draft WhatsApp
+                                    </button>
+                                    <button 
+                                      onClick={() => handleOpenExternal(lead, 'whatsapp')}
+                                      className="px-2 py-1.5 bg-indigo-600 text-white rounded-r-lg text-[10px] font-bold uppercase hover:bg-indigo-700 transition-colors"
+                                      title="Open WhatsApp Web"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex gap-1 group/btn">
+                                    <button 
+                                      onClick={() => handleGenerate(lead, 'email')}
+                                      disabled={!!isGenerating[lead.id]}
+                                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-l-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors border border-blue-100 disabled:opacity-50"
+                                    >
+                                      {isGenerating[lead.id] ? (
+                                        <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
+                                      ) : (
+                                        <Mail className="w-3 h-3" />
+                                      )}
+                                      Draft Email
+                                    </button>
+                                    <button 
+                                      onClick={() => handleOpenExternal(lead, 'email')}
+                                      className="px-2 py-1.5 bg-blue-600 text-white rounded-r-lg text-[10px] font-bold uppercase hover:bg-blue-700 transition-colors"
+                                      title="Open Email Client"
+                                    >
+                                      <Mail className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </>
+            ) : (
+              <PipelineBoard leads={leads} onUpdateStatus={handleUpdateStatus} />
+            )}
           </div>
 
           {/* Sidebar Area: Add Lead Form Overlay/Accordion */}
@@ -789,6 +1008,83 @@ export default function App() {
 
         </div>
       </main>
+    </div>
+  );
+}
+
+function PipelineBoard({ leads, onUpdateStatus }: { leads: any[]; onUpdateStatus: (id: string, s: string) => void }) {
+  const statusColors: Record<string, string> = {
+    'new': 'border-t-blue-400',
+    'contacted': 'border-t-amber-400',
+    'engaged': 'border-t-indigo-400',
+    'qualified': 'border-t-emerald-400',
+    'closed-won': 'border-t-green-400',
+    'closed-lost': 'border-t-rose-400',
+  };
+
+  return (
+    <div className="flex gap-6 overflow-x-auto pb-8 pt-2 custom-scrollbar">
+      {PIPELINE_STAGES.map((stage) => {
+        const stageLeads = leads.filter(l => l.status === stage);
+        return (
+          <div key={stage} className="flex-shrink-0 w-72 flex flex-col h-full">
+            <div className={`mb-4 flex items-center justify-between border-t-2 pt-3 ${statusColors[stage]}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">{stage.replace('-', ' ')}</span>
+                <span className="bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{stageLeads.length}</span>
+              </div>
+            </div>
+            
+            <div className="flex-grow space-y-3 min-h-[500px] bg-slate-50/50 rounded-2xl p-2 border border-slate-100 border-dashed">
+              <AnimatePresence mode="popLayout">
+                {stageLeads.map((lead, i) => (
+                  <motion.div
+                    key={lead.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="glass-card p-4 rounded-xl shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                  >
+                    <h4 className="font-bold text-slate-900 mb-1 text-sm">{lead.businessName}</h4>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mb-3">
+                      <MapPin className="w-3 h-3" />
+                      {lead.cityCountry}
+                    </div>
+                    
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                      <div className="flex items-center -space-x-1">
+                        <div className="w-5 h-5 rounded-full bg-indigo-100 border border-white flex items-center justify-center text-[8px] font-bold text-indigo-600">
+                          {lead.businessName.charAt(0)}
+                        </div>
+                      </div>
+                      <select 
+                        value={lead.status} 
+                        onChange={(e) => onUpdateStatus(lead.id, e.target.value)}
+                        className="text-[10px] font-bold text-slate-400 bg-transparent border-none focus:ring-0 cursor-pointer hover:text-indigo-600 transition-colors"
+                      >
+                        {PIPELINE_STAGES.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              
+              {stageLeads.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-slate-300 py-10">
+                  <div className="w-8 h-8 rounded-full border border-slate-200 border-dashed flex items-center justify-center mb-2">
+                    <Plus className="w-4 h-4 opacity-30" />
+                  </div>
+                  <span className="text-[10px] font-medium uppercase tracking-widest">No Leads</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
