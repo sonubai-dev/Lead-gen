@@ -1,28 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 0. Global Safety Net - Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    function isSignedIn() { return request.auth != null; }
-    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
-    function incoming() { return request.resource.data; }
+    // --- Helpers ---
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { 
+      return request.resource.data; 
+    }
+    
+    function existing() { 
+      return resource.data; 
+    }
 
+    // --- Validation Blueprint ---
     function isValidLead(data) {
-      return data.businessName is string && data.businessName.size() > 0 && data.businessName.size() <= 128
-             && data.phoneNumber is string && data.phoneNumber.size() > 0 && data.phoneNumber.size() <= 20
-             && data.cityCountry is string && data.cityCountry.size() > 0 && data.cityCountry.size() <= 128
+      return data.businessName is string 
+             && data.businessName.size() > 0 
+             && data.businessName.size() <= 128
+             && data.phoneNumber is string 
+             && data.phoneNumber.size() > 0 
+             && data.phoneNumber.size() <= 32
+             && (data.email == "" || (data.email is string && data.email.size() <= 128))
+             && data.cityCountry is string 
+             && data.cityCountry.size() > 0 
+             && data.cityCountry.size() <= 128
              && data.hasWebsite is bool
              && (data.hasWebsite == false || (data.websiteUrl is string && data.websiteUrl.size() > 0 && data.websiteUrl.size() <= 256))
              && data.status in ['new', 'contacted', 'engaged', 'qualified', 'closed-won', 'closed-lost']
-             && data.conversationHistory is list && data.conversationHistory.size() <= 100;
+             && data.conversationHistory is list 
+             && data.conversationHistory.size() <= 100
+             && data.createdAt is timestamp;
     }
 
+    // --- Rules ---
     match /leads/{leadId} {
-      allow create: if isSignedIn() && isValidId(leadId) && isValidLead(incoming());
+      // Create: Must be signed in, have a valid ID, follow schema, and use server time
+      allow create: if isSignedIn() 
+                    && isValidId(leadId) 
+                    && isValidLead(incoming())
+                    && incoming().createdAt == request.time;
+      
+      // Read: Any signed-in user can view the pipeline
       allow read: if isSignedIn();
-      allow update: if isSignedIn() && isValidLead(incoming());
+      
+      // Update: Must be signed in, follow schema, and not change creation date
+      allow update: if isSignedIn() 
+                    && isValidLead(incoming())
+                    && incoming().createdAt == existing().createdAt;
+      
+      // Delete: Strictly forbidden for now
       allow delete: if false;
     }
   }

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, FormEvent } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { 
   Search, 
@@ -173,6 +173,10 @@ export default function App() {
       setEmailError('Invalid email address');
       return;
     }
+    if (hasWebsite && !websiteUrl.trim()) {
+      alert('Website URL is required when "Company Website" is checked');
+      return;
+    }
     if (hasWebsite && websiteUrl && !websiteUrl.startsWith('http')) {
       alert('Website URL must start with http:// or https://');
       return;
@@ -187,7 +191,7 @@ export default function App() {
         cityCountry,
         hasWebsite,
         websiteUrl: hasWebsite ? websiteUrl : '',
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
         status: 'new',
         conversationHistory: []
       });

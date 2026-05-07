@@ -6,17 +6,19 @@
       "type": "object",
       "properties": {
         "businessName": { "type": "string" },
-        "category": { "type": "string" },
+        "email": { "type": "string" },
         "phoneNumber": { "type": "string" },
         "hasWebsite": { "type": "boolean" },
+        "websiteUrl": { "type": "string" },
         "cityCountry": { "type": "string" },
         "conversationHistory": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
         "status": { 
           "type": "string",
           "enum": ["new", "contacted", "engaged", "qualified", "closed-won", "closed-lost"]
         }
       },
-      "required": ["businessName", "phoneNumber", "hasWebsite", "status"]
+      "required": ["businessName", "phoneNumber", "hasWebsite", "status", "createdAt"]
     }
   },
   "firestore": {
