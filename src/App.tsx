@@ -144,7 +144,10 @@ export default function App() {
 
   const handleUpdateStatus = async (leadId: string, newStatus: string) => {
     try {
-      await updateDoc(doc(db, 'leads', leadId), { status: newStatus });
+      await updateDoc(doc(db, 'leads', leadId), { 
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `leads/${leadId}`);
     }
@@ -157,7 +160,8 @@ export default function App() {
         conversationHistory: arrayUnion({
           message,
           timestamp: new Date()
-        })
+        }),
+        updatedAt: serverTimestamp()
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `leads/${leadId}`);
